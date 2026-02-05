@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aviator Pro - Real Money Game</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <div class="logo">Aviator Pro</div>
+        <nav>
+            <span id="nav-user">Guest</span>
+            <span id="nav-balance" style="color: var(--accent); font-weight: bold; margin-left: 10px;"></span>
+            {% if session.get('user_id') %}
+                <a href="/dashboard">Game</a>
+                <a href="/wallet">Wallet</a>
+                {% if session.get('role') == 'admin' %}
+                    <a href="/admin">Admin</a>
+                {% endif %}
+                <a href="#" onclick="logout()">Logout</a>
+            {% else %}
+                <a href="/login">Login</a>
+                <a href="/register">Register</a>
+            {% endif %}
+        </nav>
+    </header>
+
+    <div class="container">
+        <div id="message-box" class="alert"></div>
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
+    <script>
+        async function logout() {
+            try {
+                await fetchAPI('/auth/logout', 'POST');
+                window.location.href = '/login';
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

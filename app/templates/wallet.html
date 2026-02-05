@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <div style="background: var(--bg-panel); padding: 2rem; border-radius: 8px;">
+        <h2>My Wallet</h2>
+        <div style="font-size: 2rem; font-weight: bold; margin-bottom: 2rem;" id="wallet-balance-display">
+            Loading...
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+            <button onclick="showTab('deposit')" class="btn-success">Deposit</button>
+            <button onclick="showTab('withdraw')" class="btn-secondary">Withdraw</button>
+        </div>
+
+        <div id="tab-deposit">
+            <h3>Make a Deposit</h3>
+            <p>Enter amount to request deposit. Admin must approve.</p>
+            <input type="number" id="dep-amount" placeholder="Amount">
+            <button onclick="doDeposit()">Submit Request</button>
+        </div>
+
+        <div id="tab-withdraw" style="display: none;">
+            <h3>Request Withdrawal</h3>
+            <p>Enter amount to withdraw from your balance.</p>
+            <input type="number" id="with-amount" placeholder="Amount">
+            <button onclick="doWithdraw()">Submit Request</button>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <h3>History</h3>
+        <table style="font-size: 0.9rem;">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Amt</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="trans-list">
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function showTab(tab) {
+        document.getElementById('tab-deposit').style.display = tab === 'deposit' ? 'block' : 'none';
+        document.getElementById('tab-withdraw').style.display = tab === 'withdraw' ? 'block' : 'none';
+    }
+
+    async function loadData() {
+        const user = await checkAuth();
+        if (user) {
+            document.getElementById('wallet-balance-display').textContent = `$${user.balance.toFixed(2)}`;
+        }
+
+        try {
+            const trans = await fetchAPI('/wallet/transactions');
+            const list = document.getElementById('trans-list');
+            list.innerHTML = '';
+            trans.forEach(t => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                <td>${t.type}</td>
+                <td>$${t.amount.toFixed(2)}</td>
+                <td class="status-${t.status}">${t.status}</td>
+            `;
+                list.appendChild(tr);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function doDeposit() {
+        const amount = document.getElementById('dep-amount').value;
+        try {
+            await fetchAPI('/wallet/deposit', 'POST', { amount });
+            showMessage('Deposit request submitted', 'success');
+            document.getElementById('dep-amount').value = '';
+            loadData();
+        } catch (e) {
+            showMessage(e.message);
+        }
+    }
+
+    async function doWithdraw() {
+        const amount = document.getElementById('with-amount').value;
+        try {
+            await fetchAPI('/wallet/withdraw', 'POST', { amount });
+            showMessage('Withdrawal request submitted', 'success');
+            document.getElementById('with-amount').value = '';
+            loadData();
+        } catch (e) {
+            showMessage(e.message);
+        }
+    }
+
+    loadData();
+</script>
+{% endblock %}

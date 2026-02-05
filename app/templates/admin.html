@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <div style="background: var(--bg-panel); padding: 2rem; border-radius: 8px; flex: 1;">
+        <h2>Admin Dashboard</h2>
+
+        <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+            <button onclick="showSection('deposits')" class="btn-secondary">Deposits</button>
+            <button onclick="showSection('withdrawals')" class="btn-secondary">Withdrawals</button>
+            <button onclick="showSection('users')" class="btn-secondary">Users</button>
+            <button onclick="showSection('logs')" class="btn-secondary">Logs</button>
+        </div>
+
+        <div id="sec-deposits">
+            <h3>Pending Deposits</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>User</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="list-deposits"></tbody>
+            </table>
+        </div>
+
+        <div id="sec-withdrawals" style="display:none;">
+            <h3>Pending Withdrawals</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>User</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="list-withdrawals"></tbody>
+            </table>
+        </div>
+
+        <div id="sec-users" style="display:none;">
+            <h3>User Management</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Balance</th>
+                        <th>Active</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="list-users"></tbody>
+            </table>
+        </div>
+
+        <div id="sec-logs" style="display:none;">
+            <h3>Activity Logs</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>User</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>IP</th>
+                    </tr>
+                </thead>
+                <tbody id="list-logs"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function showSection(sec) {
+        document.getElementById('sec-deposits').style.display = sec === 'deposits' ? 'block' : 'none';
+        document.getElementById('sec-withdrawals').style.display = sec === 'withdrawals' ? 'block' : 'none';
+        document.getElementById('sec-users').style.display = sec === 'users' ? 'block' : 'none';
+        document.getElementById('sec-logs').style.display = sec === 'logs' ? 'block' : 'none';
+        loadData(sec);
+    }
+
+    async function loadData(sec) {
+        try {
+            if (sec === 'deposits') {
+                const data = await fetchAPI('/admin/deposits');
+                const list = document.getElementById('list-deposits');
+                list.innerHTML = '';
+                data.forEach(d => {
+                    if (d.status !== 'pending') return; // Only show pending for action
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                    <td>${d.id}</td>
+                    <td>${d.username}</td>
+                    <td>$${d.amount.toFixed(2)}</td>
+                    <td>${d.created_at}</td>
+                    <td>
+                        <button class="btn-success" onclick="processDeposit(${d.id}, 'approve')">Approve</button>
+                        <button style="background:var(--primary)" onclick="processDeposit(${d.id}, 'reject')">Reject</button>
+                    </td>
+                `;
+                    list.appendChild(tr);
+                });
+            } else if (sec === 'withdrawals') {
+                const data = await fetchAPI('/admin/withdrawals');
+                const list = document.getElementById('list-withdrawals');
+                list.innerHTML = '';
+                data.forEach(w => {
+                    if (w.status !== 'pending') return;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                    <td>${w.id}</td>
+                    <td>${w.username}</td>
+                    <td>$${w.amount.toFixed(2)}</td>
+                    <td>${w.created_at}</td>
+                    <td>
+                        <button class="btn-success" onclick="processWithdrawal(${w.id}, 'approve')">Approve</button>
+                        <button style="background:var(--primary)" onclick="processWithdrawal(${w.id}, 'reject')">Reject</button>
+                    </td>
+                `;
+                    list.appendChild(tr);
+                });
+            } else if (sec === 'users') {
+                const data = await fetchAPI('/admin/users');
+                const list = document.getElementById('list-users');
+                list.innerHTML = '';
+                data.forEach(u => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                    <td>${u.id}</td>
+                    <td>${u.username}</td>
+                    <td>${u.role}</td>
+                    <td>$${u.balance.toFixed(2)}</td>
+                    <td>${u.is_active ? 'Yes' : 'No'}</td>
+                    <td>
+                        ${u.role !== 'admin' ?
+                            `<button onclick="toggleUser(${u.id})">${u.is_active ? 'Suspend' : 'Activate'}</button>` : ''}
+                    </td>
+                `;
+                    list.appendChild(tr);
+                });
+            } else if (sec === 'logs') {
+                const data = await fetchAPI('/admin/logs');
+                const list = document.getElementById('list-logs');
+                list.innerHTML = '';
+                data.forEach(l => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                    <td>${l.date}</td>
+                    <td>${l.username}</td>
+                    <td>${l.type}</td>
+                    <td>${l.description}</td>
+                    <td>${l.ip}</td>
+                `;
+                    list.appendChild(tr);
+                });
+            }
+        } catch (e) {
+            console.error(e);
+            showMessage(e.message);
+        }
+    }
+
+    async function processDeposit(id, action) {
+        if (!confirm(`${action.toUpperCase()} deposit ${id}?`)) return;
+        try {
+            await fetchAPI(`/admin/deposits/${id}/process`, 'POST', { action });
+            loadData('deposits');
+            showMessage(`Deposit ${action}ed`, 'success');
+        } catch (e) { showMessage(e.message); }
+    }
+
+    async function processWithdrawal(id, action) {
+        if (!confirm(`${action.toUpperCase()} withdrawal ${id}?`)) return;
+        try {
+            await fetchAPI(`/admin/withdrawals/${id}/process`, 'POST', { action });
+            loadData('withdrawals');
+            showMessage(`Withdrawal ${action}ed`, 'success');
+        } catch (e) { showMessage(e.message); }
+    }
+
+    async function toggleUser(id) {
+        if (!confirm('Toggle user status?')) return;
+        try {
+            await fetchAPI(`/admin/users/${id}/toggle`, 'POST');
+            loadData('users');
+        } catch (e) { showMessage(e.message); }
+    }
+
+    loadData('deposits');
+</script>
+{% endblock %}

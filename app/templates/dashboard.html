@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <div class="game-area">
+        <div class="game-canvas" id="game-canvas">
+            <div id="multiplier" class="multiplier-display">1.00x</div>
+            <div id="status-overlay" style="position:absolute; top:20px; right:20px; font-weight:bold; color:#aaa;">
+                LOADING...</div>
+        </div>
+        <div class="controls-area">
+            <div class="bet-controls">
+                <span>Bet Amount:</span>
+                <input type="number" id="bet-amount" value="10.00" min="1" step="0.1"
+                    style="width: 100px; margin-bottom: 0;">
+                <button id="btn-bet" onclick="placeBet()">PLACE BET</button>
+                <button id="btn-cashout" onclick="cashout()"
+                    style="display:none; background: var(--accent); color: #000;">CASHOUT</button>
+            </div>
+            <div id="my-bet-info" style="margin-left: 20px; color: #aaa;"></div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <h3>Game Log</h3>
+        <ul id="game-log" style="list-style: none; padding: 0; color: #aaa;">
+            <li>Waiting for next round...</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let gameState = 'waiting'; // waiting, active, crashed
+    let roundId = null;
+    let startTime = null;
+    let currentBetId = null;
+    let isBetting = false;
+
+    const multiplierEl = document.getElementById('multiplier');
+    const statusEl = document.getElementById('status-overlay');
+    const btnBet = document.getElementById('btn-bet');
+    const btnCashout = document.getElementById('btn-cashout');
+    const myBetInfo = document.getElementById('my-bet-info');
+
+    // Sound effects? functionality first.
+
+    async function updateState() {
+        try {
+            const data = await fetchAPI('/game/state');
+
+            if (data.status === 'crashed') {
+                handleCrash(data.multiplier);
+            } else if (data.status === 'active') {
+                if (gameState !== 'active') {
+                    gameState = 'active';
+                    startTime = new Date(data.start_time);
+                    roundId = data.round_id;
+                    startAnimation();
+                    statusEl.textContent = "FLYING";
+                    statusEl.style.color = "var(--accent)";
+                    multiplierEl.classList.remove('crashed');
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function handleCrash(crashVal) {
+        if (gameState !== 'crashed') {
+            gameState = 'crashed';
+            multiplierEl.textContent = crashVal.toFixed(2) + 'x';
+            multiplierEl.classList.add('crashed');
+            statusEl.textContent = "CRASHED";
+            statusEl.style.color = "var(--primary)";
+
+            btnBet.style.display = 'block';
+            btnCashout.style.display = 'none';
+            btnBet.disabled = false;
+
+            if (currentBetId) {
+                myBetInfo.textContent = "Round Ended. You missed it.";
+                currentBetId = null;
+            }
+
+            // Add to log
+            const log = document.getElementById('game-log');
+            const li = document.createElement('li');
+            li.textContent = `Crashed at ${crashVal}x`;
+            log.prepend(li);
+        }
+    }
+
+    function startAnimation() {
+        // Determine button state
+        if (currentBetId) {
+            btnBet.style.display = 'none';
+            btnCashout.style.display = 'block';
+        } else {
+            btnBet.style.display = 'block';
+            btnCashout.style.display = 'none';
+            // Can't bet mid-round in this simple version
+            btnBet.disabled = true;
+        }
+
+        requestAnimationFrame(animate);
+    }
+
+    function animate() {
+        if (gameState !== 'active') return;
+
+        // Client-side projection logic
+        const now = new Date();
+        const elapsed = (now - startTime) / 1000;
+        const currentMult = 1.0 * (1.1 ** elapsed); // Must match backend formula!
+
+        multiplierEl.textContent = currentMult.toFixed(2) + 'x';
+
+        requestAnimationFrame(animate);
+    }
+
+    async function placeBet() {
+        const amount = document.getElementById('bet-amount').value;
+        try {
+            // Optimistic UI?
+            const res = await fetchAPI('/game/bet', 'POST', { amount });
+            currentBetId = res.bet_id;
+            myBetInfo.textContent = `Bet Placed: $${amount}`;
+            checkAuth(); // Update balance header
+
+            // If round is active, switch to cashout immediately? 
+            // Logic says we can only bet BEFORE round. But backend `place_bet` logic I wrote currently allows betting on ACTIVE round if not crashed.
+            // If my backend allows it, then:
+            if (gameState === 'active') {
+                btnBet.style.display = 'none';
+                btnCashout.style.display = 'block';
+            }
+        } catch (e) {
+            showMessage(e.message);
+        }
+    }
+
+    async function cashout() {
+        if (!currentBetId) return;
+
+        try {
+            const res = await fetchAPI('/game/cashout', 'POST', { bet_id: currentBetId });
+            showMessage(`CASHED OUT: $${res.payout.toFixed(2)} @ ${res.multiplier.toFixed(2)}x`, 'success');
+            myBetInfo.textContent = `Won: $${res.payout.toFixed(2)}`;
+            currentBetId = null;
+
+            btnBet.style.display = 'block';
+            btnCashout.style.display = 'none';
+            btnBet.disabled = true; // Wait for next round
+
+            checkAuth();
+        } catch (e) {
+            showMessage(e.message);
+            // Likely crashed
+        }
+    }
+
+    // Poll state every 1s
+    setInterval(updateState, 1000);
+    updateState();
+    checkAuth();
+</script>
+{% endblock %}
