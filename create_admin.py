@@ -1,34 +1,37 @@
-from app import create_app, db
-from app.models import User
+from getpass import getpass
+
 from werkzeug.security import generate_password_hash
+
+from app import create_app, db
+from app.models import User, Wallet
 
 app = create_app()
 
+
 def create_admin():
     with app.app_context():
-        username = input("Enter Admin Username: ")
-        email = input("Enter Admin Email: ")
-        password = input("Enter Admin Password: ")
-        
+        username = input("Enter Admin Username: ").strip()
+        email = input("Enter Admin Email: ").strip().lower()
+        password = getpass("Enter Admin Password: ")
+        if password != getpass("Confirm Admin Password: "):
+            print("Passwords do not match.")
+            return
+        if len(password) < 8:
+            print("Password must be at least 8 characters.")
+            return
+
         if User.query.filter((User.username == username) | (User.email == email)).first():
             print("User already exists!")
             return
 
-        hashed_password = generate_password_hash(password)
-        admin = User(username=username, email=email, password_hash=hashed_password, role='admin')
-        
-        # Create wallet too
-        from app.models import Wallet
-        wallet = Wallet(user_id=None, balance=0) # will be linked after flush? No, need ID.
-        
+        admin = User(username=username, email=email, password_hash=generate_password_hash(password), role='admin')
         db.session.add(admin)
-        db.session.flush()
-        
-        wallet.user_id = admin.id
-        db.session.add(wallet)
-        
+        db.session.flush()  # assigns admin.id
+
+        db.session.add(Wallet(user_id=admin.id, balance=0))
         db.session.commit()
         print(f"Admin user {username} created successfully!")
+
 
 if __name__ == "__main__":
     create_admin()

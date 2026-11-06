@@ -1,14 +1,28 @@
 {% extends "base.html" %}
+{% block title %}Log in{% endblock %}
 
 {% block content %}
-<div class="auth-container">
-    <h2>Welcome Back</h2>
-    <form id="login-form">
-        <input type="text" id="username" placeholder="Username" required>
-        <input type="password" id="password" placeholder="Password" required>
-        <button type="submit">Login</button>
-    </form>
-    <p>Don't have an account? <a href="/register">Register</a></p>
+<div class="auth-layout">
+    {% set hero_title = 'Ride the curve.<br><em>Cash out in time.</em>' %}
+    {% set hero_text = 'Every round the jet climbs and the multiplier grows — until it flies away. Bet demo credits, watch the flight, and jump out before it is gone.' %}
+    {% include "_auth_hero.html" %}
+
+    <section class="auth-card card fade-in">
+        <h2>Welcome back, pilot</h2>
+        <p class="sub">Log in to board the next flight.</p>
+        <form id="login-form">
+            <div class="field">
+                <label for="username">Username</label>
+                <input type="text" id="username" autocomplete="username" required>
+            </div>
+            <div class="field">
+                <label for="password">Password</label>
+                <input type="password" id="password" autocomplete="current-password" required>
+            </div>
+            <button type="submit">Log in</button>
+        </form>
+        <p class="switch">New here? <a href="/register">Create an account</a></p>
+    </section>
 </div>
 {% endblock %}
 
@@ -16,14 +30,17 @@
 <script>
     document.getElementById('login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-
+        const btn = e.target.querySelector('button');
+        btn.disabled = true;
         try {
-            await fetchAPI('/auth/login', 'POST', { username, password });
+            await fetchAPI('/auth/login', 'POST', {
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value,
+            });
             window.location.href = '/dashboard';
         } catch (err) {
             showMessage(err.message);
+            btn.disabled = false;
         }
     });
 </script>

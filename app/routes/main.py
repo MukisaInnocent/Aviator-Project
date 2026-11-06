@@ -1,4 +1,6 @@
-from flask import Blueprint, render_template, session, redirect, url_for
+from flask import Blueprint, abort, render_template, session, redirect, url_for
+
+from app.routes.auth import current_user
 
 bp = Blueprint('main', __name__)
 
@@ -36,6 +38,10 @@ def wallet():
 def admin():
     if 'user_id' not in session:
         return redirect(url_for('main.login'))
-    # RBAC check is also done in API, but good to check here or let API 403 handle it
-    # We'll just render and let the JS fetch fail if not admin
+    user = current_user()
+    if not user or not user.is_active:
+        session.clear()
+        return redirect(url_for('main.login'))
+    if user.role != 'admin':
+        abort(403)
     return render_template('admin.html')

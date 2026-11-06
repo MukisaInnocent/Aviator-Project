@@ -1,169 +1,134 @@
 {% extends "base.html" %}
+{% block title %}Admin{% endblock %}
 
 {% block content %}
-<div class="dashboard-grid">
-    <div style="background: var(--bg-panel); padding: 2rem; border-radius: 8px; flex: 1;">
-        <h2>Admin Dashboard</h2>
+<div class="page-head fade-in">
+    <div>
+        <span class="eyebrow">Control tower</span>
+        <h1>Admin dashboard</h1>
+        <p>Review demo credit requests, manage pilots and audit activity.</p>
+    </div>
+    <button type="button" class="btn-ghost btn-sm" onclick="refreshAll()">↻ Refresh</button>
+</div>
 
-        <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
-            <button onclick="showSection('deposits')" class="btn-secondary">Deposits</button>
-            <button onclick="showSection('withdrawals')" class="btn-secondary">Withdrawals</button>
-            <button onclick="showSection('users')" class="btn-secondary">Users</button>
-            <button onclick="showSection('logs')" class="btn-secondary">Logs</button>
-        </div>
+<div class="stat-grid">
+    <div class="stat-card card amber fade-in"><span class="eyebrow">Pending requests</span><b id="stat-deposits">–</b></div>
+    <div class="stat-card card violet fade-in"><span class="eyebrow">Pending removals</span><b id="stat-withdrawals">–</b></div>
+    <div class="stat-card card fade-in"><span class="eyebrow">Pilots</span><b id="stat-users">–</b></div>
+    <div class="stat-card card green fade-in"><span class="eyebrow">Credits in circulation</span><b id="stat-credits">–</b></div>
+</div>
 
-        <div id="sec-deposits">
-            <h3>Pending Deposits</h3>
+<section class="card fade-in">
+    <div class="tabs" role="tablist">
+        <button type="button" data-sec="deposits" class="active" onclick="showSection('deposits')">Credit requests <span class="count" id="count-deposits"></span></button>
+        <button type="button" data-sec="withdrawals" onclick="showSection('withdrawals')">Credit removals <span class="count" id="count-withdrawals"></span></button>
+        <button type="button" data-sec="users" onclick="showSection('users')">Users</button>
+        <button type="button" data-sec="logs" onclick="showSection('logs')">Activity log</button>
+    </div>
+
+    <div id="sec-deposits" class="admin-section">
+        <div class="table-wrap">
             <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>User</th>
-                        <th>Amount</th>
-                        <th>Date</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>ID</th><th>User</th><th>Credits</th><th>Requested</th><th>Action</th></tr></thead>
                 <tbody id="list-deposits"></tbody>
             </table>
         </div>
+    </div>
 
-        <div id="sec-withdrawals" style="display:none;">
-            <h3>Pending Withdrawals</h3>
+    <div id="sec-withdrawals" class="admin-section" hidden>
+        <div class="table-wrap">
             <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>User</th>
-                        <th>Amount</th>
-                        <th>Date</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>ID</th><th>User</th><th>Credits</th><th>Requested</th><th>Action</th></tr></thead>
                 <tbody id="list-withdrawals"></tbody>
             </table>
         </div>
+    </div>
 
-        <div id="sec-users" style="display:none;">
-            <h3>User Management</h3>
+    <div id="sec-users" class="admin-section" hidden>
+        <div class="table-wrap">
             <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Username</th>
-                        <th>Role</th>
-                        <th>Balance</th>
-                        <th>Active</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Demo credits</th><th>Status</th><th>Action</th></tr></thead>
                 <tbody id="list-users"></tbody>
             </table>
         </div>
+    </div>
 
-        <div id="sec-logs" style="display:none;">
-            <h3>Activity Logs</h3>
+    <div id="sec-logs" class="admin-section" hidden>
+        <div class="table-wrap">
             <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>User</th>
-                        <th>Type</th>
-                        <th>Description</th>
-                        <th>IP</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>When</th><th>User</th><th>Type</th><th>Description</th><th>IP</th></tr></thead>
                 <tbody id="list-logs"></tbody>
             </table>
         </div>
     </div>
-</div>
+</section>
 {% endblock %}
 
 {% block scripts %}
 <script>
+    const SECTIONS = ['deposits', 'withdrawals', 'users', 'logs'];
+    let currentSection = 'deposits';
+
     function showSection(sec) {
-        document.getElementById('sec-deposits').style.display = sec === 'deposits' ? 'block' : 'none';
-        document.getElementById('sec-withdrawals').style.display = sec === 'withdrawals' ? 'block' : 'none';
-        document.getElementById('sec-users').style.display = sec === 'users' ? 'block' : 'none';
-        document.getElementById('sec-logs').style.display = sec === 'logs' ? 'block' : 'none';
+        currentSection = sec;
+        SECTIONS.forEach((s) => {
+            document.getElementById(`sec-${s}`).hidden = s !== sec;
+        });
+        document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.sec === sec));
         loadData(sec);
+    }
+
+    function emptyRow(cols, text) {
+        return `<tr class="empty-row"><td colspan="${cols}">${escapeHtml(text)}</td></tr>`;
+    }
+
+    function requestRows(rows, kind) {
+        const pending = rows.filter((r) => r.status === 'pending');
+        if (pending.length === 0) return emptyRow(5, 'Nothing waiting for review. ✓');
+        const fn = kind === 'deposits' ? 'processDeposit' : 'processWithdrawal';
+        return pending.map((r) => `
+            <tr>
+                <td>#${escapeHtml(r.id)}</td>
+                <td>${escapeHtml(r.username)}</td>
+                <td class="num">${formatCredits(r.amount)}</td>
+                <td title="${escapeHtml(r.created_at)}">${escapeHtml(relativeTime(r.created_at))}</td>
+                <td class="actions">
+                    <button class="btn-success btn-sm" onclick="${fn}(${Number(r.id)}, 'approve')">Approve</button>
+                    <button class="btn-danger btn-sm" onclick="${fn}(${Number(r.id)}, 'reject')">Reject</button>
+                </td>
+            </tr>`).join('');
     }
 
     async function loadData(sec) {
         try {
-            if (sec === 'deposits') {
-                const data = await fetchAPI('/admin/deposits');
-                const list = document.getElementById('list-deposits');
-                list.innerHTML = '';
-                data.forEach(d => {
-                    if (d.status !== 'pending') return; // Only show pending for action
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                    <td>${d.id}</td>
-                    <td>${d.username}</td>
-                    <td>$${d.amount.toFixed(2)}</td>
-                    <td>${d.created_at}</td>
-                    <td>
-                        <button class="btn-success" onclick="processDeposit(${d.id}, 'approve')">Approve</button>
-                        <button style="background:var(--primary)" onclick="processDeposit(${d.id}, 'reject')">Reject</button>
-                    </td>
-                `;
-                    list.appendChild(tr);
-                });
-            } else if (sec === 'withdrawals') {
-                const data = await fetchAPI('/admin/withdrawals');
-                const list = document.getElementById('list-withdrawals');
-                list.innerHTML = '';
-                data.forEach(w => {
-                    if (w.status !== 'pending') return;
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                    <td>${w.id}</td>
-                    <td>${w.username}</td>
-                    <td>$${w.amount.toFixed(2)}</td>
-                    <td>${w.created_at}</td>
-                    <td>
-                        <button class="btn-success" onclick="processWithdrawal(${w.id}, 'approve')">Approve</button>
-                        <button style="background:var(--primary)" onclick="processWithdrawal(${w.id}, 'reject')">Reject</button>
-                    </td>
-                `;
-                    list.appendChild(tr);
-                });
+            if (sec === 'deposits' || sec === 'withdrawals') {
+                const data = await fetchAPI(`/admin/${sec}`);
+                document.getElementById(`list-${sec}`).innerHTML = requestRows(data, sec);
+                updateCount(sec, data);
             } else if (sec === 'users') {
                 const data = await fetchAPI('/admin/users');
-                const list = document.getElementById('list-users');
-                list.innerHTML = '';
-                data.forEach(u => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                    <td>${u.id}</td>
-                    <td>${u.username}</td>
-                    <td>${u.role}</td>
-                    <td>$${u.balance.toFixed(2)}</td>
-                    <td>${u.is_active ? 'Yes' : 'No'}</td>
-                    <td>
-                        ${u.role !== 'admin' ?
-                            `<button onclick="toggleUser(${u.id})">${u.is_active ? 'Suspend' : 'Activate'}</button>` : ''}
-                    </td>
-                `;
-                    list.appendChild(tr);
-                });
+                document.getElementById('list-users').innerHTML = data.map((u) => `
+                    <tr>
+                        <td>#${escapeHtml(u.id)}</td>
+                        <td>${escapeHtml(u.username)}</td>
+                        <td><span class="badge ${u.role === 'admin' ? 'status-admin' : ''}">${escapeHtml(u.role)}</span></td>
+                        <td class="num">${formatCredits(u.balance)}</td>
+                        <td><span class="badge ${u.is_active ? 'status-active' : 'status-suspended'}">${u.is_active ? 'Active' : 'Suspended'}</span></td>
+                        <td>${u.role !== 'admin'
+                            ? `<button class="btn-ghost btn-sm" onclick="toggleUser(${Number(u.id)})">${u.is_active ? 'Suspend' : 'Activate'}</button>`
+                            : ''}</td>
+                    </tr>`).join('') || emptyRow(6, 'No users yet.');
+                updateUserStats(data);
             } else if (sec === 'logs') {
                 const data = await fetchAPI('/admin/logs');
-                const list = document.getElementById('list-logs');
-                list.innerHTML = '';
-                data.forEach(l => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                    <td>${l.date}</td>
-                    <td>${l.username}</td>
-                    <td>${l.type}</td>
-                    <td>${l.description}</td>
-                    <td>${l.ip}</td>
-                `;
-                    list.appendChild(tr);
-                });
+                document.getElementById('list-logs').innerHTML = data.map((l) => `
+                    <tr>
+                        <td title="${escapeHtml(l.date)}">${escapeHtml(relativeTime(l.date || ''))}</td>
+                        <td>${escapeHtml(l.username)}</td>
+                        <td><span class="badge">${escapeHtml(l.type)}</span></td>
+                        <td>${escapeHtml(l.description)}</td>
+                        <td>${escapeHtml(l.ip)}</td>
+                    </tr>`).join('') || emptyRow(5, 'No activity yet.');
             }
         } catch (e) {
             console.error(e);
@@ -171,32 +136,55 @@
         }
     }
 
-    async function processDeposit(id, action) {
-        if (!confirm(`${action.toUpperCase()} deposit ${id}?`)) return;
-        try {
-            await fetchAPI(`/admin/deposits/${id}/process`, 'POST', { action });
-            loadData('deposits');
-            showMessage(`Deposit ${action}ed`, 'success');
-        } catch (e) { showMessage(e.message); }
+    function updateCount(sec, data) {
+        const n = data.filter((r) => r.status === 'pending').length;
+        document.getElementById(`count-${sec}`).textContent = n || '';
+        document.getElementById(`stat-${sec}`).textContent = n;
     }
 
-    async function processWithdrawal(id, action) {
-        if (!confirm(`${action.toUpperCase()} withdrawal ${id}?`)) return;
+    function updateUserStats(users) {
+        document.getElementById('stat-users').textContent = users.length;
+        const total = users.reduce((sum, u) => sum + u.balance, 0);
+        const el = document.getElementById('stat-credits');
+        el.dataset.value = el.dataset.value ?? 0;
+        animateNumber(el, total);
+    }
+
+    async function refreshAll() {
         try {
-            await fetchAPI(`/admin/withdrawals/${id}/process`, 'POST', { action });
-            loadData('withdrawals');
-            showMessage(`Withdrawal ${action}ed`, 'success');
+            const [deps, wds, users] = await Promise.all([
+                fetchAPI('/admin/deposits'), fetchAPI('/admin/withdrawals'), fetchAPI('/admin/users'),
+            ]);
+            updateCount('deposits', deps);
+            updateCount('withdrawals', wds);
+            updateUserStats(users);
+        } catch (e) {
+            showMessage(e.message);
+        }
+        loadData(currentSection);
+    }
+
+    async function processRequest(kind, label, id, action) {
+        if (!confirm(`${action === 'approve' ? 'Approve' : 'Reject'} ${label} #${id}?`)) return;
+        try {
+            await fetchAPI(`/admin/${kind}/${id}/process`, 'POST', { action });
+            showMessage(`${label} #${id} ${action === 'approve' ? 'approved' : 'rejected'}`, 'success');
+            refreshAll();
         } catch (e) { showMessage(e.message); }
     }
+    const processDeposit = (id, action) => processRequest('deposits', 'Credit request', id, action);
+    const processWithdrawal = (id, action) => processRequest('withdrawals', 'Credit removal', id, action);
 
     async function toggleUser(id) {
-        if (!confirm('Toggle user status?')) return;
+        if (!confirm('Change this user\'s status?')) return;
         try {
-            await fetchAPI(`/admin/users/${id}/toggle`, 'POST');
+            const res = await fetchAPI(`/admin/users/${id}/toggle`, 'POST', {});
+            showMessage(res.message, 'success');
             loadData('users');
         } catch (e) { showMessage(e.message); }
     }
 
-    loadData('deposits');
+    checkAuth();
+    refreshAll();
 </script>
 {% endblock %}

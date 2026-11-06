@@ -1,14 +1,26 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, current_app, request, jsonify, session
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.models import User, Wallet, Deposit, Withdrawal, ActivityLog, db
 from app.routes.auth import admin_required
-from decimal import Decimal
+from app.utils import json_body
 
 bp = Blueprint('admin', __name__, url_prefix='/api/admin')
+
+LOG_LIMIT = 200
+PAST = {'approve': 'approved', 'reject': 'rejected'}
+
+
+def _action_from_request():
+    data = json_body(request) or {}
+    action = data.get('action')
+    return action if action in ('approve', 'reject') else None
+
 
 @bp.route('/users', methods=['GET'])
 @admin_required
 def get_users():
-    users = User.query.all()
+    users = User.query.order_by(User.id).all()
     user_list = [{
         'id': u.id,
         'username': u.username,
@@ -20,16 +32,45 @@ def get_users():
     } for u in users]
     return jsonify(user_list), 200
 
+
 @bp.route('/users/<int:user_id>/toggle', methods=['POST'])
 @admin_required
 def toggle_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     if user.role == 'admin':
         return jsonify({'error': 'Cannot suspend admin'}), 400
-    
+
     user.is_active = not user.is_active
+    state = 'activated' if user.is_active else 'suspended'
+    db.session.add(ActivityLog(
+        user_id=session['user_id'],
+        action_type='USER_TOGGLE',
+        description=f'User {user.id} {state}',
+        ip_address=request.remote_addr,
+    ))
     db.session.commit()
-    return jsonify({'message': f'User {"activated" if user.is_active else "suspended"}'}), 200
+    return jsonify({'message': f'User {state}'}), 200
+
+
+@bp.route('/logs', methods=['GET'])
+@admin_required
+def get_logs():
+    logs = (
+        db.session.query(ActivityLog, User.username)
+        .outerjoin(User, User.id == ActivityLog.user_id)
+        .order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
+        .limit(LOG_LIMIT)
+        .all()
+    )
+    return jsonify([{
+        'id': log.id,
+        'date': log.created_at.isoformat() if log.created_at else None,
+        'username': username or '-',
+        'type': log.action_type,
+        'description': log.description or '',
+        'ip': log.ip_address or '',
+    } for log, username in logs]), 200
+
 
 @bp.route('/deposits', methods=['GET'])
 @admin_required
@@ -45,40 +86,42 @@ def get_deposits():
     } for d in deposits]
     return jsonify(d_list), 200
 
+
 @bp.route('/deposits/<int:id>/process', methods=['POST'])
 @admin_required
 def process_deposit(id):
-    data = request.get_json()
-    action = data.get('action') # 'approve' or 'reject'
-    
-    if action not in ['approve', 'reject']:
+    action = _action_from_request()
+    if not action:
         return jsonify({'error': 'Invalid action'}), 400
 
     try:
-        deposit = Deposit.query.get_or_404(id)
+        deposit = Deposit.query.filter_by(id=id).with_for_update().first()
+        if not deposit:
+            return jsonify({'error': 'Deposit not found'}), 404
         if deposit.status != 'pending':
             return jsonify({'error': 'Deposit already processed'}), 400
 
         if action == 'approve':
-            deposit.status = 'approved'
-            deposit.approved_by = session['user_id']
-            # Update User Balance
             wallet = Wallet.query.filter_by(user_id=deposit.user_id).with_for_update().first()
+            if not wallet:
+                wallet = Wallet(user_id=deposit.user_id, balance=0)
+                db.session.add(wallet)
             wallet.balance += deposit.amount
-            
+            deposit.status = 'approved'
             log_desc = f'Deposit {id} approved. Amount: {deposit.amount}'
         else:
             deposit.status = 'rejected'
-            deposit.approved_by = session['user_id']
             log_desc = f'Deposit {id} rejected. Amount: {deposit.amount}'
+        deposit.approved_by = session['user_id']
 
-        log = ActivityLog(user_id=session['user_id'], action_type='DEPOSIT_PROCESS', description=log_desc, ip_address=request.remote_addr)
-        db.session.add(log)
+        db.session.add(ActivityLog(user_id=session['user_id'], action_type='DEPOSIT_PROCESS', description=log_desc, ip_address=request.remote_addr))
         db.session.commit()
-        return jsonify({'message': f'Deposit {action}ed successfully'}), 200
-    except Exception as e:
+        return jsonify({'message': f'Deposit {PAST[action]} successfully'}), 200
+    except SQLAlchemyError:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.exception('Unable to process deposit %s', id)
+        return jsonify({'error': 'Unable to process deposit right now'}), 500
+
 
 @bp.route('/withdrawals', methods=['GET'])
 @admin_required
@@ -94,39 +137,40 @@ def get_withdrawals():
     } for w in withdrawals]
     return jsonify(w_list), 200
 
+
 @bp.route('/withdrawals/<int:id>/process', methods=['POST'])
 @admin_required
 def process_withdrawal(id):
-    data = request.get_json()
-    action = data.get('action') # 'approve' or 'reject'
-
-    if action not in ['approve', 'reject']:
+    action = _action_from_request()
+    if not action:
         return jsonify({'error': 'Invalid action'}), 400
 
     try:
-        withdrawal = Withdrawal.query.get_or_404(id)
+        withdrawal = Withdrawal.query.filter_by(id=id).with_for_update().first()
+        if not withdrawal:
+            return jsonify({'error': 'Withdrawal not found'}), 404
         if withdrawal.status != 'pending':
-             return jsonify({'error': 'Withdrawal already processed'}), 400
+            return jsonify({'error': 'Withdrawal already processed'}), 400
 
         if action == 'approve':
-            # Check balance again!
+            # Check balance again under a row lock.
             wallet = Wallet.query.filter_by(user_id=withdrawal.user_id).with_for_update().first()
-            if wallet.balance < withdrawal.amount:
-                 return jsonify({'error': 'User has insufficient balance for approval'}), 400 # Or reject automatically?
-            
+            if not wallet or wallet.balance < withdrawal.amount:
+                db.session.rollback()
+                return jsonify({'error': 'User has insufficient balance for approval'}), 400
+
             wallet.balance -= withdrawal.amount
             withdrawal.status = 'approved'
-            withdrawal.approved_by = session['user_id']
             log_desc = f'Withdrawal {id} approved. Amount: {withdrawal.amount}'
         else:
             withdrawal.status = 'rejected'
-            withdrawal.approved_by = session['user_id']
             log_desc = f'Withdrawal {id} rejected. Amount: {withdrawal.amount}'
+        withdrawal.approved_by = session['user_id']
 
-        log = ActivityLog(user_id=session['user_id'], action_type='WITHDRAWAL_PROCESS', description=log_desc, ip_address=request.remote_addr)
-        db.session.add(log)
+        db.session.add(ActivityLog(user_id=session['user_id'], action_type='WITHDRAWAL_PROCESS', description=log_desc, ip_address=request.remote_addr))
         db.session.commit()
-        return jsonify({'message': f'Withdrawal {action}ed successfully'}), 200
-    except Exception as e:
+        return jsonify({'message': f'Withdrawal {PAST[action]} successfully'}), 200
+    except SQLAlchemyError:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.exception('Unable to process withdrawal %s', id)
+        return jsonify({'error': 'Unable to process withdrawal right now'}), 500

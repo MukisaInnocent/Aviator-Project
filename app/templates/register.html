@@ -1,15 +1,34 @@
 {% extends "base.html" %}
+{% block title %}Sign up{% endblock %}
 
 {% block content %}
-<div class="auth-container">
-    <h2>Create Account</h2>
-    <form id="register-form">
-        <input type="text" id="username" placeholder="Username" required>
-        <input type="email" id="email" placeholder="Email" required>
-        <input type="password" id="password" placeholder="Password" required>
-        <button type="submit">Register</button>
-    </form>
-    <p>Already have an account? <a href="/login">Login</a></p>
+<div class="auth-layout">
+    {% set hero_title = 'Your boarding pass<br><em>is one form away.</em>' %}
+    {% set hero_text = 'Create a free demo account, request demo credits from an admin, and start flying. Credits are for play only and have no cash value.' %}
+    {% include "_auth_hero.html" %}
+
+    <section class="auth-card card fade-in">
+        <h2>Create account</h2>
+        <p class="sub">Takes less than a minute.</p>
+        <form id="register-form">
+            <div class="field">
+                <label for="username">Username</label>
+                <input type="text" id="username" autocomplete="username" pattern="[A-Za-z0-9_.\-]{3,50}" required>
+                <span class="hint">3–50 characters: letters, numbers, _ . -</span>
+            </div>
+            <div class="field">
+                <label for="email">Email</label>
+                <input type="email" id="email" autocomplete="email" required>
+            </div>
+            <div class="field">
+                <label for="password">Password</label>
+                <input type="password" id="password" autocomplete="new-password" minlength="8" required>
+                <span class="hint">At least 8 characters</span>
+            </div>
+            <button type="submit">Create account</button>
+        </form>
+        <p class="switch">Already flying? <a href="/login">Log in</a></p>
+    </section>
 </div>
 {% endblock %}
 
@@ -17,16 +36,19 @@
 <script>
     document.getElementById('register-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const username = document.getElementById('username').value;
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-
+        const btn = e.target.querySelector('button');
+        btn.disabled = true;
         try {
-            await fetchAPI('/auth/register', 'POST', { username, email, password });
-            showMessage('Registration successful! Please login.', 'success');
-            setTimeout(() => window.location.href = '/login', 1500);
+            await fetchAPI('/auth/register', 'POST', {
+                username: document.getElementById('username').value,
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+            });
+            showMessage('Account created! Taking you to log in…', 'success');
+            setTimeout(() => { window.location.href = '/login'; }, 1300);
         } catch (err) {
             showMessage(err.message);
+            btn.disabled = false;
         }
     });
 </script>

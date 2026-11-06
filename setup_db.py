@@ -1,4 +1,7 @@
-import os
+import secrets
+from getpass import getpass
+from urllib.parse import quote
+
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
@@ -8,7 +11,7 @@ def setup_database():
     print("Please enter your PostgreSQL credentials to correct the configuration.")
     
     username = input("Postgres Username (default: postgres): ") or "postgres"
-    password = input(f"Password for user '{username}': ")
+    password = getpass(f"Password for user '{username}': ")
     
     # Try to connect to default 'postgres' database to create the new one
     try:
@@ -36,10 +39,10 @@ def setup_database():
         conn.close()
         
         # Update .env file
-        db_url = f"postgresql://{username}:{password}@localhost/aviator_db"
+        db_url = f"postgresql://{quote(username, safe='')}:{quote(password, safe='')}@localhost/aviator_db"
         with open(".env", "w") as f:
             f.write(f"DATABASE_URL={db_url}\n")
-            f.write("SECRET_KEY=dev_secret_key_change_in_production\n")
+            f.write(f"SECRET_KEY={secrets.token_hex(32)}\n")
             
         print("\nSUCCESS! .env file updated.")
         print("You can now run 'python run.py'")

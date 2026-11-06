@@ -1,0 +1,19 @@
+<section class="auth-hero fade-in">
+    <span class="eyebrow">Demo crash game · no real money</span>
+    <h1>{{ hero_title|safe }}</h1>
+    <p>{{ hero_text }}</p>
+    <div class="hero-sky" aria-hidden="true">
+        <div class="hero-stars"></div>
+        <svg class="trail" viewBox="0 0 440 220" preserveAspectRatio="none">
+            <defs>
+                <linearGradient id="trail-grad" x1="0" x2="1">
+                    <stop offset="0" stop-color="#3ee8ff" stop-opacity="0.2"/>
+                    <stop offset="0.6" stop-color="#8b5cff"/>
+                    <stop offset="1" stop-color="#ff7a3d"/>
+                </linearGradient>
+            </defs>
+            <path d="M 10 200 Q 260 190 420 40"/>
+        </svg>
+        <svg class="hero-jet" viewBox="0 0 100 40"><use href="#jet"/></svg>
+    </div>
+</section>

@@ -3,44 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aviator Pro - Real Money Game</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <title>{% block title %}Aviator{% endblock %} · Demo Flight</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-    <header>
-        <div class="logo">Aviator Pro</div>
-        <nav>
-            <span id="nav-user">Guest</span>
-            <span id="nav-balance" style="color: var(--accent); font-weight: bold; margin-left: 10px;"></span>
+<body class="page-{{ request.endpoint.split('.')[-1] if request.endpoint else 'none' }}">
+    <div class="sky-backdrop" aria-hidden="true">
+        <span class="orb orb-a"></span>
+        <span class="orb orb-b"></span>
+        <span class="orb orb-c"></span>
+    </div>
+
+    <header class="topbar">
+        <a class="brand" href="/">
+            <svg class="brand-plane" viewBox="0 0 100 40" aria-hidden="true"><use href="#jet"/></svg>
+            <span>Aviator</span>
+            <small>DEMO</small>
+        </a>
+        <nav class="nav">
+            {% set ep = request.endpoint or '' %}
             {% if session.get('user_id') %}
-                <a href="/dashboard">Game</a>
-                <a href="/wallet">Wallet</a>
+                <a href="/dashboard" class="{{ 'active' if ep == 'main.dashboard' }}">Play</a>
+                <a href="/wallet" class="{{ 'active' if ep == 'main.wallet' }}">Wallet</a>
                 {% if session.get('role') == 'admin' %}
-                    <a href="/admin">Admin</a>
+                    <a href="/admin" class="{{ 'active' if ep == 'main.admin' }}">Admin</a>
                 {% endif %}
-                <a href="#" onclick="logout()">Logout</a>
+                <span class="nav-user">
+                    <span class="avatar" id="nav-avatar" aria-hidden="true">·</span>
+                    <span class="nav-user-text">
+                        <span id="nav-user">Pilot</span>
+                        <span id="nav-balance" class="nav-balance" aria-label="Demo credit balance"></span>
+                    </span>
+                </span>
+                <button type="button" class="btn-ghost btn-sm" onclick="logout()">Log out</button>
             {% else %}
-                <a href="/login">Login</a>
-                <a href="/register">Register</a>
+                <a href="/login" class="{{ 'active' if ep == 'main.login' }}">Log in</a>
+                <a href="/register" class="btn-pill {{ 'active' if ep == 'main.register' }}">Sign up</a>
             {% endif %}
         </nav>
     </header>
 
-    <div class="container">
-        <div id="message-box" class="alert"></div>
+    <main class="container">
+        <div id="message-box" class="alert" role="status" aria-live="polite"></div>
         {% block content %}{% endblock %}
-    </div>
+    </main>
+
+    <!-- Shared jet silhouette (same shape is drawn on the game canvas). -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <linearGradient id="jet-body" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#ffffff"/>
+                <stop offset="1" stop-color="#b9c6ff"/>
+            </linearGradient>
+            <g id="jet">
+                <path fill="url(#jet-body)" d="M4 20C4 16 10 15 20 15L72 15C84 15 94 17 98 20C94 23 84 25 72 25L20 25C10 25 4 24 4 20Z M46 18L34 3L42 3L64 17Z M44 22L30 38L39 38L64 23Z M9 17L3 4L10 4L22 16Z M10 23L4 31L11 31L23 24Z"/>
+                <path fill="#3ee8ff" d="M78 17.2C84 17.2 90 18 93.5 19.6L79 19.6Z"/>
+            </g>
+        </defs>
+    </svg>
 
     <script src="{{ url_for('static', filename='main.js') }}"></script>
     <script>
         async function logout() {
             try {
                 await fetchAPI('/auth/logout', 'POST');
-                window.location.href = '/login';
             } catch (e) {
                 console.error(e);
             }
+            window.location.href = '/login';
         }
     </script>
     {% block scripts %}{% endblock %}
